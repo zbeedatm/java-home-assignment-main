@@ -19,6 +19,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -99,5 +104,106 @@ class LeaveRequestsTests {
 
         assertEquals(400, result.getStatusCode().value());
         assertEquals(before, leaveRequests.count());
+    }
+
+    @Test
+    void approve_PendingRequest_SetsApproved() {
+        LeaveRequest pending = pendingVacation(employee(20), 3, LocalDate.of(2026, 4, 1));
+
+        ResponseEntity<?> result = controller.approve(pending.getId());
+
+        assertTrue(result.getStatusCode().is2xxSuccessful());
+        assertEquals(LeaveStatus.APPROVED, leaveRequests.findById(pending.getId()).orElseThrow().getStatus());
+    }
+
+    @Test
+    void approve_MissingRequest_Returns404() {
+        ResponseEntity<?> result = controller.approve(9_999_999L);
+
+        assertEquals(404, result.getStatusCode().value());
+    }
+
+    @Test
+    void approve_AlreadyApprovedOrRejected_Returns409() {
+        Employee emp = employee(20);
+        LeaveRequest approved = pendingVacation(emp, 2, LocalDate.of(2026, 5, 1));
+        controller.approve(approved.getId());
+
+        ResponseEntity<?> second = controller.approve(approved.getId());
+        assertEquals(409, second.getStatusCode().value());
+        assertEquals(LeaveStatus.APPROVED, leaveRequests.findById(approved.getId()).orElseThrow().getStatus());
+
+        LeaveRequest rejected = pendingVacation(emp, 2, LocalDate.of(2026, 6, 1));
+        rejected.setStatus(LeaveStatus.REJECTED);
+        leaveRequests.save(rejected);
+
+        ResponseEntity<?> rejectedResult = controller.approve(rejected.getId());
+        assertEquals(409, rejectedResult.getStatusCode().value());
+        assertEquals(LeaveStatus.REJECTED, leaveRequests.findById(rejected.getId()).orElseThrow().getStatus());
+    }
+
+    @Test
+    void approve_WouldExceedQuota_Returns400AndStaysPending() {
+        Employee emp = employee(20);
+        LeaveRequest already = pendingVacation(emp, 18, LocalDate.of(2026, 1, 6));
+        already.setStatus(LeaveStatus.APPROVED);
+        leaveRequests.save(already);
+
+        LeaveRequest pending = pendingVacation(emp, 3, LocalDate.of(2026, 3, 1));
+
+        ResponseEntity<?> result = controller.approve(pending.getId());
+
+        assertEquals(400, result.getStatusCode().value());
+        assertEquals(LeaveStatus.PENDING, leaveRequests.findById(pending.getId()).orElseThrow().getStatus());
+    }
+
+    @Test
+    void approve_TwoRequestsThatTogetherExceedQuota_OnlyOneSucceeds() throws Exception {
+        Employee emp = employee(10);
+        LeaveRequest first = pendingVacation(emp, 6, LocalDate.of(2026, 7, 1));
+        LeaveRequest second = pendingVacation(emp, 6, LocalDate.of(2026, 8, 1));
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            List<Callable<ResponseEntity<?>>> tasks = List.of(
+                    () -> controller.approve(first.getId()),
+                    () -> controller.approve(second.getId())
+            );
+            List<Future<ResponseEntity<?>>> futures = pool.invokeAll(tasks);
+
+            long approvedResponses = 0;
+            for (Future<ResponseEntity<?>> future : futures) {
+                if (future.get().getStatusCode().is2xxSuccessful()) {
+                    approvedResponses++;
+                }
+            }
+
+            assertEquals(1, approvedResponses);
+            long approvedRows = List.of(first, second).stream()
+                    .map(request -> leaveRequests.findById(request.getId()).orElseThrow().getStatus())
+                    .filter(status -> status == LeaveStatus.APPROVED)
+                    .count();
+            assertEquals(1, approvedRows);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private Employee employee(int quota) {
+        Employee emp = new Employee();
+        emp.setName("Emp " + quota);
+        emp.setAnnualQuota(quota);
+        return employees.save(emp);
+    }
+
+    private LeaveRequest pendingVacation(Employee employee, int days, LocalDate start) {
+        LeaveRequest request = new LeaveRequest();
+        request.setEmployeeId(employee.getId());
+        request.setType(LeaveType.VACATION);
+        request.setStartDate(start);
+        request.setEndDate(start.plusDays(days - 1L));
+        request.setDays(days);
+        request.setStatus(LeaveStatus.PENDING);
+        return leaveRequests.save(request);
     }
 }
