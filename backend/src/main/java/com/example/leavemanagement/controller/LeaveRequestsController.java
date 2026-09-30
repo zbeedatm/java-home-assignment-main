@@ -75,8 +75,8 @@ public class LeaveRequestsController {
                 .mapToInt(LeaveRequest::getDays)
                 .sum();
 
-        // Make sure the request does not exceed the quota.
-        if (dto.getType() == LeaveType.VACATION && days > employee.getAnnualQuota()) {
+        // Remaining balance is the annual quota minus vacation days already approved.
+        if (dto.getType() == LeaveType.VACATION && used + days > employee.getAnnualQuota()) {
             return ResponseEntity.badRequest().body("Not enough vacation balance");
         }
 

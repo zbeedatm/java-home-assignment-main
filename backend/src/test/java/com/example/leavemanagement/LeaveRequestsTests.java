@@ -3,6 +3,8 @@ package com.example.leavemanagement;
 import com.example.leavemanagement.controller.LeaveRequestsController;
 import com.example.leavemanagement.dto.CreateLeaveRequestDto;
 import com.example.leavemanagement.model.Employee;
+import com.example.leavemanagement.model.LeaveRequest;
+import com.example.leavemanagement.model.LeaveStatus;
 import com.example.leavemanagement.model.LeaveType;
 import com.example.leavemanagement.repository.EmployeeRepository;
 import com.example.leavemanagement.repository.LeaveRequestRepository;
@@ -69,7 +71,33 @@ class LeaveRequestsTests {
         assertEquals(before + 1, leaveRequests.count());
     }
 
-    // TODO (candidate): add a test that proves the balance bug is fixed —
-    // an employee who has already used most of the quota should NOT be able
-    // to create a request that pushes them over the annual quota.
+    @Test
+    void create_ExceedingRemainingBalance_IsRejected() {
+        Employee emp = new Employee();
+        emp.setName("Almost Out");
+        emp.setAnnualQuota(20);
+        employees.save(emp);
+
+        LeaveRequest approved = new LeaveRequest();
+        approved.setEmployeeId(emp.getId());
+        approved.setType(LeaveType.VACATION);
+        approved.setStartDate(LocalDate.of(2026, 1, 6));
+        approved.setEndDate(LocalDate.of(2026, 1, 23));
+        approved.setDays(18);
+        approved.setStatus(LeaveStatus.APPROVED);
+        leaveRequests.save(approved);
+
+        long before = leaveRequests.count();
+
+        CreateLeaveRequestDto dto = new CreateLeaveRequestDto();
+        dto.setEmployeeId(emp.getId());
+        dto.setType(LeaveType.VACATION);
+        dto.setStartDate(LocalDate.of(2026, 3, 1));
+        dto.setEndDate(LocalDate.of(2026, 3, 3)); // 3 days; 18 + 3 exceeds the quota of 20
+
+        ResponseEntity<?> result = controller.create(dto);
+
+        assertEquals(400, result.getStatusCode().value());
+        assertEquals(before, leaveRequests.count());
+    }
 }
