@@ -4,7 +4,14 @@ import { HttpClient } from '@angular/common/http';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { Employee, LeaveRequest } from '../models/leave-request.model';
-import { inclusiveDays, nonNegativeDays, startNotAfterEnd } from './leave-request-form.validators';
+import {
+  atLeastOneWorkingDay,
+  datesNotInPast,
+  nonNegativeDays,
+  startNotAfterEnd,
+  todayIso,
+  workingDays,
+} from './leave-request-form.validators';
 
 // NOTE: This component was written quickly for a POC.
 // It talks to the API directly, manages state by hand and uses `any` everywhere.
@@ -25,6 +32,7 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
   successMessage = '';
   approvingIds = new Set<number>();
   approvalNotices: { [id: number]: { kind: 'success' | 'error'; text: string } } = {};
+  readonly today = todayIso();
   readonly leaveTypes = [
     { value: 0, label: 'Vacation' },
     { value: 1, label: 'Sick' },
@@ -42,7 +50,7 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
       type: [null, Validators.required],
       startDate: ['', Validators.required],
       endDate: ['', Validators.required],
-    }, { validators: [startNotAfterEnd, nonNegativeDays] });
+    }, { validators: [startNotAfterEnd, nonNegativeDays, atLeastOneWorkingDay, datesNotInPast(this.today)] });
   }
 
   ngOnInit(): void {
@@ -67,7 +75,12 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
     if (!startDate || !endDate) {
       return null;
     }
-    return inclusiveDays(startDate, endDate);
+    return workingDays(startDate, endDate);
+  }
+
+  get endMin(): string {
+    const startDate = this.form.get('startDate')?.value;
+    return startDate && startDate > this.today ? startDate : this.today;
   }
 
   showError(controlName: string): boolean {
@@ -81,6 +94,18 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
 
   showNegativeDaysError(): boolean {
     return this.form.hasError('negativeDays') && this.datesChecked();
+  }
+
+  showNoWorkingDayError(): boolean {
+    return this.form.hasError('noWorkingDay') && this.datesChecked();
+  }
+
+  showStartPastError(): boolean {
+    return this.form.hasError('startInPast') && this.datesChecked();
+  }
+
+  showEndPastError(): boolean {
+    return this.form.hasError('endInPast') && this.datesChecked();
   }
 
   submit(): void {

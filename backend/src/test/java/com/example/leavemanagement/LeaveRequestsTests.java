@@ -18,6 +18,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -65,14 +66,16 @@ class LeaveRequestsTests {
         CreateLeaveRequestDto dto = new CreateLeaveRequestDto();
         dto.setEmployeeId(emp.getId());
         dto.setType(LeaveType.VACATION);
-        dto.setStartDate(LocalDate.of(2026, 3, 1));
-        dto.setEndDate(LocalDate.of(2026, 3, 3)); // 3 days, well within the quota
+        LocalDate start = onOrAfter(DayOfWeek.SUNDAY);
+        dto.setStartDate(start);
+        dto.setEndDate(start.plusDays(2)); // Sunday–Tuesday: 3 working days
 
         // Act
         ResponseEntity<?> result = controller.create(dto);
 
         // Assert
         assertTrue(result.getStatusCode().is2xxSuccessful());
+        assertEquals(3, ((LeaveRequest) result.getBody()).getDays());
         assertEquals(before + 1, leaveRequests.count());
     }
 
@@ -97,8 +100,43 @@ class LeaveRequestsTests {
         CreateLeaveRequestDto dto = new CreateLeaveRequestDto();
         dto.setEmployeeId(emp.getId());
         dto.setType(LeaveType.VACATION);
-        dto.setStartDate(LocalDate.of(2026, 3, 1));
-        dto.setEndDate(LocalDate.of(2026, 3, 3)); // 3 days; 18 + 3 exceeds the quota of 20
+        LocalDate start = onOrAfter(DayOfWeek.SUNDAY);
+        dto.setStartDate(start);
+        dto.setEndDate(start.plusDays(2)); // 3 working days; 18 + 3 exceeds the quota of 20
+
+        ResponseEntity<?> result = controller.create(dto);
+
+        assertEquals(400, result.getStatusCode().value());
+        assertEquals(before, leaveRequests.count());
+    }
+
+    @Test
+    void create_FridayThroughSunday_CountsOnlySunday() {
+        Employee emp = employee(20);
+        LocalDate friday = onOrAfter(DayOfWeek.FRIDAY);
+
+        CreateLeaveRequestDto dto = new CreateLeaveRequestDto();
+        dto.setEmployeeId(emp.getId());
+        dto.setType(LeaveType.SICK);
+        dto.setStartDate(friday);
+        dto.setEndDate(friday.plusDays(2));
+
+        ResponseEntity<?> result = controller.create(dto);
+
+        assertTrue(result.getStatusCode().is2xxSuccessful());
+        assertEquals(1, ((LeaveRequest) result.getBody()).getDays());
+    }
+
+    @Test
+    void create_PastStartDate_IsRejected() {
+        Employee emp = employee(20);
+        long before = leaveRequests.count();
+
+        CreateLeaveRequestDto dto = new CreateLeaveRequestDto();
+        dto.setEmployeeId(emp.getId());
+        dto.setType(LeaveType.SICK);
+        dto.setStartDate(LocalDate.now().minusDays(1));
+        dto.setEndDate(onOrAfter(DayOfWeek.SUNDAY));
 
         ResponseEntity<?> result = controller.create(dto);
 
@@ -187,6 +225,14 @@ class LeaveRequestsTests {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    private static LocalDate onOrAfter(DayOfWeek day) {
+        LocalDate date = LocalDate.now();
+        while (date.getDayOfWeek() != day) {
+            date = date.plusDays(1);
+        }
+        return date;
     }
 
     private Employee employee(int quota) {

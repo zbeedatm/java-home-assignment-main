@@ -42,8 +42,8 @@ describe('LeaveRequestsComponent form', () => {
     fixture.componentInstance.form.setValue({
       employeeId: 1,
       type: 0,
-      startDate: '2026-03-03',
-      endDate: '2026-03-01',
+      startDate: '2027-06-08',
+      endDate: '2027-06-06',
     });
 
     submit();
@@ -51,7 +51,7 @@ describe('LeaveRequestsComponent form', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Start date cannot be later than the end date.');
     expect(text).toContain('Number of days cannot be negative.');
-    expect(text).toContain('-1');
+    expect(text).toContain('-3');
     http.expectNone(request => request.method === 'POST');
   });
 
@@ -59,8 +59,8 @@ describe('LeaveRequestsComponent form', () => {
     fixture.componentInstance.form.setValue({
       employeeId: 1,
       type: 0,
-      startDate: '2026-03-01',
-      endDate: '2026-03-03',
+      startDate: '2027-06-06',
+      endDate: '2027-06-08',
     });
 
     submit();
@@ -70,8 +70,8 @@ describe('LeaveRequestsComponent form', () => {
     expect(post.request.body).toEqual({
       employeeId: 1,
       type: 0,
-      startDate: '2026-03-01',
-      endDate: '2026-03-03',
+      startDate: '2027-06-06',
+      endDate: '2027-06-08',
     });
     post.flush({ id: 9 });
     http.expectOne(request =>

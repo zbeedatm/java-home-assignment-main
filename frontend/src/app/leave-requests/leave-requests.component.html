@@ -25,29 +25,32 @@
     <p *ngIf="showError('type')" id="type-error" class="error" role="alert">Select a leave type.</p>
   </div>
 
-  <div class="field" [class.invalid]="showError('startDate') || showDateOrderError()">
+  <div class="field" [class.invalid]="showError('startDate') || showDateOrderError() || showStartPastError()">
     <label for="startDate">Start date</label>
-    <input id="startDate" type="date" formControlName="startDate"
-           [attr.aria-invalid]="showError('startDate') || showDateOrderError()"
-           [attr.aria-describedby]="showError('startDate') ? 'start-error' : (showDateOrderError() ? 'date-order-error' : null)">
+    <input id="startDate" type="date" formControlName="startDate" [min]="today"
+           [attr.aria-invalid]="showError('startDate') || showDateOrderError() || showStartPastError()"
+           [attr.aria-describedby]="showError('startDate') ? 'start-error' : (showStartPastError() ? 'start-past-error' : (showDateOrderError() ? 'date-order-error' : null))">
     <p *ngIf="showError('startDate')" id="start-error" class="error" role="alert">Enter a start date.</p>
+    <p *ngIf="showStartPastError()" id="start-past-error" class="error" role="alert">Start date cannot be in the past.</p>
   </div>
 
-  <div class="field" [class.invalid]="showError('endDate') || showDateOrderError()">
+  <div class="field" [class.invalid]="showError('endDate') || showDateOrderError() || showEndPastError()">
     <label for="endDate">End date</label>
-    <input id="endDate" type="date" formControlName="endDate"
-           [attr.aria-invalid]="showError('endDate') || showDateOrderError()"
-           [attr.aria-describedby]="showError('endDate') ? 'end-error' : (showDateOrderError() ? 'date-order-error' : null)">
+    <input id="endDate" type="date" formControlName="endDate" [min]="endMin"
+           [attr.aria-invalid]="showError('endDate') || showDateOrderError() || showEndPastError()"
+           [attr.aria-describedby]="showError('endDate') ? 'end-error' : (showEndPastError() ? 'end-past-error' : (showDateOrderError() ? 'date-order-error' : null))">
     <p *ngIf="showError('endDate')" id="end-error" class="error" role="alert">Enter an end date.</p>
+    <p *ngIf="showEndPastError()" id="end-past-error" class="error" role="alert">End date cannot be in the past.</p>
     <p *ngIf="showDateOrderError()" id="date-order-error" class="error" role="alert">Start date cannot be later than the end date.</p>
   </div>
 
-  <div class="field days" [class.invalid]="showNegativeDaysError()">
+  <div class="field days" [class.invalid]="showNegativeDaysError() || showNoWorkingDayError()">
     <span id="days-label">Days</span>
     <output for="startDate endDate" aria-labelledby="days-label"
-            [attr.aria-describedby]="showNegativeDaysError() ? 'days-error' : 'days-hint'">{{ dayCount === null ? '—' : dayCount }}</output>
-    <p id="days-hint" class="hint">Includes the start and end dates.</p>
+            [attr.aria-describedby]="showNegativeDaysError() ? 'days-error' : (showNoWorkingDayError() ? 'days-empty-error' : 'days-hint')">{{ dayCount === null ? '—' : dayCount }}</output>
+    <p id="days-hint" class="hint">Sunday–Thursday.</p>
     <p *ngIf="showNegativeDaysError()" id="days-error" class="error" role="alert">Number of days cannot be negative.</p>
+    <p *ngIf="showNoWorkingDayError()" id="days-empty-error" class="error" role="alert">Select at least one working day. Friday and Saturday are not counted.</p>
   </div>
 
   <div class="actions">
