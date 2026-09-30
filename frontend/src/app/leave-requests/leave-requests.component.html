@@ -1,6 +1,64 @@
 <h2>Leave Requests</h2>
 
-<!-- TODO (candidate): add the "new request" form here, with validation. -->
+<form class="request-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+  <h3>New request</h3>
+
+  <div class="field" [class.invalid]="showError('employeeId')">
+    <label for="employeeId">Employee</label>
+    <select id="employeeId" formControlName="employeeId"
+            [attr.aria-invalid]="showError('employeeId')"
+            [attr.aria-describedby]="showError('employeeId') ? 'employee-error' : null">
+      <option [ngValue]="null">Select an employee</option>
+      <option *ngFor="let employee of employees" [ngValue]="employee.id">{{ employee.name }}</option>
+    </select>
+    <p *ngIf="showError('employeeId')" id="employee-error" class="error" role="alert">Select an employee.</p>
+  </div>
+
+  <div class="field" [class.invalid]="showError('type')">
+    <label for="leaveType">Leave type</label>
+    <select id="leaveType" formControlName="type"
+            [attr.aria-invalid]="showError('type')"
+            [attr.aria-describedby]="showError('type') ? 'type-error' : null">
+      <option [ngValue]="null">Select a leave type</option>
+      <option *ngFor="let option of leaveTypes" [ngValue]="option.value">{{ option.label }}</option>
+    </select>
+    <p *ngIf="showError('type')" id="type-error" class="error" role="alert">Select a leave type.</p>
+  </div>
+
+  <div class="field" [class.invalid]="showError('startDate') || showDateOrderError()">
+    <label for="startDate">Start date</label>
+    <input id="startDate" type="date" formControlName="startDate"
+           [attr.aria-invalid]="showError('startDate') || showDateOrderError()"
+           [attr.aria-describedby]="showError('startDate') ? 'start-error' : (showDateOrderError() ? 'date-order-error' : null)">
+    <p *ngIf="showError('startDate')" id="start-error" class="error" role="alert">Enter a start date.</p>
+  </div>
+
+  <div class="field" [class.invalid]="showError('endDate') || showDateOrderError()">
+    <label for="endDate">End date</label>
+    <input id="endDate" type="date" formControlName="endDate"
+           [attr.aria-invalid]="showError('endDate') || showDateOrderError()"
+           [attr.aria-describedby]="showError('endDate') ? 'end-error' : (showDateOrderError() ? 'date-order-error' : null)">
+    <p *ngIf="showError('endDate')" id="end-error" class="error" role="alert">Enter an end date.</p>
+    <p *ngIf="showDateOrderError()" id="date-order-error" class="error" role="alert">Start date cannot be later than the end date.</p>
+  </div>
+
+  <div class="field days" [class.invalid]="showNegativeDaysError()">
+    <span id="days-label">Days</span>
+    <output for="startDate endDate" aria-labelledby="days-label"
+            [attr.aria-describedby]="showNegativeDaysError() ? 'days-error' : 'days-hint'">{{ dayCount === null ? '—' : dayCount }}</output>
+    <p id="days-hint" class="hint">Includes the start and end dates.</p>
+    <p *ngIf="showNegativeDaysError()" id="days-error" class="error" role="alert">Number of days cannot be negative.</p>
+  </div>
+
+  <div class="actions">
+    <button class="submit" type="submit" [disabled]="submitting">
+      {{ submitting ? 'Submitting…' : 'Submit request' }}
+    </button>
+  </div>
+
+  <p *ngIf="serverError" class="error form-message" role="alert">{{ serverError }}</p>
+  <p *ngIf="successMessage" class="success form-message" role="status">{{ successMessage }}</p>
+</form>
 
 <div *ngIf="loading">Loading...</div>
 
