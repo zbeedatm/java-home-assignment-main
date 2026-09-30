@@ -88,9 +88,19 @@ button {
   border-radius: 4px;
 }
 
-button.submit {
+button.submit,
+button.approve {
   min-height: 44px;
   padding: 8px 16px;
+}
+
+.approve-cell {
+  min-width: 160px;
+}
+
+.row-notice {
+  margin-top: 4px;
+  max-width: 220px;
 }
 
 button:disabled {

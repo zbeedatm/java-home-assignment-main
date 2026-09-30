@@ -81,4 +81,54 @@ describe('LeaveRequestsComponent form', () => {
     expect(fixture.nativeElement.textContent).toContain('Request submitted.');
     expect(fixture.nativeElement.textContent).not.toContain('Select a leave type.');
   });
+
+  it('updates only the approved row and shows success', () => {
+    const component = fixture.componentInstance;
+    component.requests = [
+      { id: 4, employee: { name: 'Dana' }, type: 0, startDate: '2026-05-01', endDate: '2026-05-01', status: 0, days: 1 },
+      { id: 5, employee: { name: 'Yossi' }, type: 1, startDate: '2026-06-01', endDate: '2026-06-01', status: 0, days: 1 },
+    ];
+    fixture.detectChanges();
+
+    const button = fixture.nativeElement.querySelectorAll('button.approve')[0] as HTMLButtonElement;
+    button.click();
+    fixture.detectChanges();
+
+    expect(button.textContent).toContain('Approving…');
+    expect(button.disabled).toBeTrue();
+    expect(fixture.nativeElement.querySelectorAll('button.approve').length).toBe(2);
+
+    const post = http.expectOne('http://localhost:5080/api/leave-requests/4/approve');
+    expect(post.request.method).toBe('POST');
+    post.flush({ id: 4, employeeId: 1, employee: { id: 1, name: 'Dana', annualQuota: 20 }, type: 0, startDate: '2026-05-01', endDate: '2026-05-01', status: 1, days: 1 });
+    fixture.detectChanges();
+
+    http.expectNone(request => request.method === 'GET');
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Approved');
+    expect(text).toContain('Request approved.');
+    expect(text).toContain('Yossi');
+    expect(fixture.nativeElement.querySelectorAll('button.approve').length).toBe(1);
+    expect(component.loading).toBeFalse();
+  });
+
+  it('keeps the row pending and shows the server error when approval is rejected', () => {
+    const component = fixture.componentInstance;
+    component.requests = [
+      { id: 4, employee: { name: 'Dana' }, type: 0, startDate: '2026-05-01', endDate: '2026-05-01', status: 0, days: 1 },
+    ];
+    fixture.detectChanges();
+
+    const button = fixture.nativeElement.querySelector('button.approve') as HTMLButtonElement;
+    button.click();
+    const post = http.expectOne('http://localhost:5080/api/leave-requests/4/approve');
+    post.flush('Leave request is already decided', { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+
+    http.expectNone(request => request.method === 'GET');
+    expect(fixture.nativeElement.textContent).toContain('Leave request is already decided');
+    expect(fixture.nativeElement.textContent).toContain('Pending');
+    expect((fixture.nativeElement.querySelector('button.approve') as HTMLButtonElement).disabled).toBeFalse();
+    expect(component.requests[0].status).toBe(0);
+  });
 });

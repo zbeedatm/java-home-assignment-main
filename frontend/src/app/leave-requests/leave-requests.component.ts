@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Subscription } from 'rxjs';
-import { Employee } from '../models/leave-request.model';
+import { Employee, LeaveRequest } from '../models/leave-request.model';
 import { inclusiveDays, nonNegativeDays, startNotAfterEnd } from './leave-request-form.validators';
 
 // NOTE: This component was written quickly for a POC.
@@ -23,6 +23,8 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
   submitted = false;
   serverError = '';
   successMessage = '';
+  approvingIds = new Set<number>();
+  approvalNotices: { [id: number]: { kind: 'success' | 'error'; text: string } } = {};
   readonly leaveTypes = [
     { value: 0, label: 'Vacation' },
     { value: 1, label: 'Sick' },
@@ -123,13 +125,49 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
     });
   }
 
-  // Wired up by the candidate as part of the assignment.
+  isApproving(id: number): boolean {
+    return this.approvingIds.has(id);
+  }
+
   approve(id: number): void {
-    // TODO (candidate): call POST /api/leave-requests/{id}/approve
-    // and handle loading / error / success without a generic alert.
-    this.http.post<any>(this.apiUrl + '/' + id + '/approve', {}).subscribe(() => {
-      this.load();
+    if (this.approvingIds.has(id)) {
+      return;
+    }
+
+    this.approvingIds = new Set(this.approvingIds).add(id);
+    const notices = { ...this.approvalNotices };
+    delete notices[id];
+    this.approvalNotices = notices;
+
+    this.http.post<LeaveRequest>(this.apiUrl + '/' + id + '/approve', {}).subscribe({
+      next: (updated) => {
+        this.finishApproving(id);
+        this.requests = this.requests.map((request) =>
+          request.id === updated.id
+            ? { ...request, ...updated, employee: updated.employee ?? request.employee }
+            : request);
+        this.approvalNotices = {
+          ...this.approvalNotices,
+          [id]: { kind: 'success', text: 'Request approved.' },
+        };
+      },
+      error: (error) => {
+        this.finishApproving(id);
+        const message = typeof error.error === 'string' && error.error
+          ? error.error
+          : 'Could not approve the request.';
+        this.approvalNotices = {
+          ...this.approvalNotices,
+          [id]: { kind: 'error', text: message },
+        };
+      },
     });
+  }
+
+  private finishApproving(id: number): void {
+    const approvingIds = new Set(this.approvingIds);
+    approvingIds.delete(id);
+    this.approvingIds = approvingIds;
   }
 
   typeLabel(type: number): string {

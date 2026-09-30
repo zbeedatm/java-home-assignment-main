@@ -84,8 +84,18 @@
       <td>{{ r.endDate | date: 'dd/MM/yyyy' }}</td>
       <td>{{ r.days }}</td>
       <td>{{ statusLabel(r.status) }}</td>
-      <td>
-        <button *ngIf="r.status == 0" (click)="approve(r.id)">Approve</button>
+      <td class="approve-cell">
+        <button *ngIf="r.status == 0" type="button" class="approve"
+                [disabled]="isApproving(r.id)"
+                [attr.aria-busy]="isApproving(r.id)"
+                (click)="approve(r.id)">
+          {{ isApproving(r.id) ? 'Approving…' : 'Approve' }}
+        </button>
+        <p *ngIf="approvalNotices[r.id] as notice"
+           class="row-notice"
+           [class.error]="notice.kind === 'error'"
+           [class.success]="notice.kind === 'success'"
+           [attr.role]="notice.kind === 'error' ? 'alert' : 'status'">{{ notice.text }}</p>
       </td>
     </tr>
   </tbody>
