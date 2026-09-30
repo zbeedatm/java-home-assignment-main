@@ -85,8 +85,8 @@ describe('LeaveRequestsComponent form', () => {
   it('updates only the approved row and shows success', () => {
     const component = fixture.componentInstance;
     component.requests = [
-      { id: 4, employee: { name: 'Dana' }, type: 0, startDate: '2026-05-01', endDate: '2026-05-01', status: 0, days: 1 },
-      { id: 5, employee: { name: 'Yossi' }, type: 1, startDate: '2026-06-01', endDate: '2026-06-01', status: 0, days: 1 },
+      { id: 4, employeeId: 1, employee: { id: 1, name: 'Dana', annualQuota: 20 }, type: 0, startDate: '2026-05-01', endDate: '2026-05-01', status: 0, days: 1 },
+      { id: 5, employeeId: 2, employee: { id: 2, name: 'Yossi', annualQuota: 14 }, type: 1, startDate: '2026-06-01', endDate: '2026-06-01', status: 0, days: 1 },
     ];
     fixture.detectChanges();
 
@@ -115,7 +115,7 @@ describe('LeaveRequestsComponent form', () => {
   it('keeps the row pending and shows the server error when approval is rejected', () => {
     const component = fixture.componentInstance;
     component.requests = [
-      { id: 4, employee: { name: 'Dana' }, type: 0, startDate: '2026-05-01', endDate: '2026-05-01', status: 0, days: 1 },
+      { id: 4, employeeId: 1, employee: { id: 1, name: 'Dana', annualQuota: 20 }, type: 0, startDate: '2026-05-01', endDate: '2026-05-01', status: 0, days: 1 },
     ];
     fixture.detectChanges();
 

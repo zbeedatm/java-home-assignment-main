@@ -1,9 +1,18 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Subscription } from 'rxjs';
-import { Employee, LeaveRequest } from '../models/leave-request.model';
+import { HttpErrorResponse } from '@angular/common/http';
+import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { EMPTY, Subject, catchError, finalize, switchMap } from 'rxjs';
+import {
+  ApprovalNotice,
+  CreateLeaveRequest,
+  Employee,
+  LeaveRequest,
+  LeaveStatus,
+  LeaveType,
+} from '../models/leave-request.model';
+import { LeaveApiService } from './leave-api.service';
 import {
   atLeastOneWorkingDay,
   datesNotInPast,
@@ -13,8 +22,6 @@ import {
   workingDays,
 } from './leave-request-form.validators';
 
-// NOTE: This component was written quickly for a POC.
-// It talks to the API directly, manages state by hand and uses `any` everywhere.
 @Component({
   selector: 'app-leave-requests',
   standalone: true,
@@ -22,8 +29,8 @@ import {
   templateUrl: './leave-requests.component.html',
   styleUrls: ['./leave-requests.component.css']
 })
-export class LeaveRequestsComponent implements OnInit, OnDestroy {
-  requests: any[] = [];
+export class LeaveRequestsComponent implements OnInit {
+  requests: LeaveRequest[] = [];
   employees: Employee[] = [];
   loading = false;
   submitting = false;
@@ -31,42 +38,59 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
   serverError = '';
   successMessage = '';
   approvingIds = new Set<number>();
-  approvalNotices: { [id: number]: { kind: 'success' | 'error'; text: string } } = {};
+  approvalNotices: { [id: number]: ApprovalNotice } = {};
+  readonly pendingStatus = LeaveStatus.Pending;
   readonly today = todayIso();
-  readonly leaveTypes = [
-    { value: 0, label: 'Vacation' },
-    { value: 1, label: 'Sick' },
-    { value: 2, label: 'Unpaid' },
+  readonly leaveTypes: { value: LeaveType; label: string }[] = [
+    { value: LeaveType.Vacation, label: 'Vacation' },
+    { value: LeaveType.Sick, label: 'Sick' },
+    { value: LeaveType.Unpaid, label: 'Unpaid' },
   ];
-  readonly form: FormGroup;
+  readonly form: FormGroup<{
+    employeeId: FormControl<number | null>;
+    type: FormControl<LeaveType | null>;
+    startDate: FormControl<string>;
+    endDate: FormControl<string>;
+  }>;
 
-  private apiUrl = 'http://localhost:5080/api/leave-requests';
-  private employeesUrl = 'http://localhost:5080/api/employees';
-  private formChanges?: Subscription;
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly api = inject(LeaveApiService);
+  private readonly loadRequests = new Subject<void>();
 
-  constructor(private http: HttpClient, formBuilder: FormBuilder) {
+  constructor(formBuilder: FormBuilder) {
     this.form = formBuilder.group({
-      employeeId: [null, Validators.required],
-      type: [null, Validators.required],
-      startDate: ['', Validators.required],
-      endDate: ['', Validators.required],
+      employeeId: formBuilder.control<number | null>(null, Validators.required),
+      type: formBuilder.control<LeaveType | null>(null, Validators.required),
+      startDate: formBuilder.nonNullable.control('', Validators.required),
+      endDate: formBuilder.nonNullable.control('', Validators.required),
     }, { validators: [startNotAfterEnd, nonNegativeDays, atLeastOneWorkingDay, datesNotInPast(this.today)] });
   }
 
   ngOnInit(): void {
-    this.formChanges = this.form.valueChanges.subscribe(() => {
+    this.form.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.serverError = '';
       this.successMessage = '';
     });
+
+    this.loadRequests.pipe(
+      switchMap(() => {
+        this.loading = true;
+        return this.api.list().pipe(
+          catchError(() => {
+            this.serverError = 'Could not load leave requests.';
+            return EMPTY;
+          }),
+          finalize(() => this.loading = false),
+        );
+      }),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe(requests => this.requests = requests);
+
     this.load();
-    this.http.get<Employee[]>(this.employeesUrl).subscribe({
-      next: (employees) => this.employees = employees,
+    this.api.employees().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: employees => this.employees = employees,
       error: () => this.serverError = 'Could not load employees.',
     });
-  }
-
-  ngOnDestroy(): void {
-    this.formChanges?.unsubscribe();
   }
 
   get dayCount(): number | null {
@@ -117,9 +141,18 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const value = this.form.getRawValue();
+    if (value.employeeId == null || value.type == null) {
+      return;
+    }
+    const request: CreateLeaveRequest = {
+      employeeId: value.employeeId,
+      type: value.type,
+      startDate: value.startDate,
+      endDate: value.endDate,
+    };
     this.submitting = true;
-    const { employeeId, type, startDate, endDate } = this.form.value;
-    this.http.post(this.apiUrl, { employeeId, type, startDate, endDate }).subscribe({
+    this.api.create(request).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.submitting = false;
         this.submitted = false;
@@ -127,27 +160,15 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
         this.successMessage = 'Request submitted.';
         this.load();
       },
-      error: (error) => {
+      error: (error: unknown) => {
         this.submitting = false;
-        this.serverError = typeof error.error === 'string' && error.error
-          ? error.error
-          : 'Could not submit the request.';
+        this.serverError = this.errorMessage(error, 'Could not submit the request.');
       },
     });
   }
 
-  private datesChecked(): boolean {
-    const start = this.form.get('startDate');
-    const end = this.form.get('endDate');
-    return this.submitted || !!start?.touched || !!end?.touched;
-  }
-
   load(): void {
-    this.loading = true;
-    this.http.get<any>(this.apiUrl).subscribe((data) => {
-      this.requests = data;
-      this.loading = false;
-    });
+    this.loadRequests.next();
   }
 
   isApproving(id: number): boolean {
@@ -164,10 +185,10 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
     delete notices[id];
     this.approvalNotices = notices;
 
-    this.http.post<LeaveRequest>(this.apiUrl + '/' + id + '/approve', {}).subscribe({
-      next: (updated) => {
+    this.api.approve(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: updated => {
         this.finishApproving(id);
-        this.requests = this.requests.map((request) =>
+        this.requests = this.requests.map(request =>
           request.id === updated.id
             ? { ...request, ...updated, employee: updated.employee ?? request.employee }
             : request);
@@ -176,17 +197,36 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
           [id]: { kind: 'success', text: 'Request approved.' },
         };
       },
-      error: (error) => {
+      error: (error: unknown) => {
         this.finishApproving(id);
-        const message = typeof error.error === 'string' && error.error
-          ? error.error
-          : 'Could not approve the request.';
         this.approvalNotices = {
           ...this.approvalNotices,
-          [id]: { kind: 'error', text: message },
+          [id]: { kind: 'error', text: this.errorMessage(error, 'Could not approve the request.') },
         };
       },
     });
+  }
+
+  typeLabel(type: LeaveType): string {
+    switch (type) {
+      case LeaveType.Vacation: return 'Vacation';
+      case LeaveType.Sick: return 'Sick';
+      default: return 'Unpaid';
+    }
+  }
+
+  statusLabel(status: LeaveStatus): string {
+    switch (status) {
+      case LeaveStatus.Pending: return 'Pending';
+      case LeaveStatus.Approved: return 'Approved';
+      default: return 'Rejected';
+    }
+  }
+
+  private datesChecked(): boolean {
+    const start = this.form.get('startDate');
+    const end = this.form.get('endDate');
+    return this.submitted || !!start?.touched || !!end?.touched;
   }
 
   private finishApproving(id: number): void {
@@ -195,15 +235,10 @@ export class LeaveRequestsComponent implements OnInit, OnDestroy {
     this.approvingIds = approvingIds;
   }
 
-  typeLabel(type: number): string {
-    if (type == 0) return 'Vacation';
-    if (type == 1) return 'Sick';
-    return 'Unpaid';
-  }
-
-  statusLabel(status: number): string {
-    if (status == 0) return 'Pending';
-    if (status == 1) return 'Approved';
-    return 'Rejected';
+  private errorMessage(error: unknown, fallback: string): string {
+    if (error instanceof HttpErrorResponse && typeof error.error === 'string' && error.error) {
+      return error.error;
+    }
+    return fallback;
   }
 }

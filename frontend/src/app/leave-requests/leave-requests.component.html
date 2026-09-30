@@ -88,7 +88,7 @@
       <td>{{ r.days }}</td>
       <td>{{ statusLabel(r.status) }}</td>
       <td class="approve-cell">
-        <button *ngIf="r.status == 0" type="button" class="approve"
+        <button *ngIf="r.status === pendingStatus" type="button" class="approve"
                 [disabled]="isApproving(r.id)"
                 [attr.aria-busy]="isApproving(r.id)"
                 (click)="approve(r.id)">
